@@ -41,16 +41,17 @@ async function listar(_req, res) {
 
 async function crear(req, res) {
     try {
-        const id = await svc.crearCliente(req.body);
+        const id = await svc.crearCliente(req.body, req.usuario);
         return res.status(201).json({ id_cliente: id, mensaje: 'Cliente creado' });
     } catch (err) {
         return res.status(400).json({ mensaje: err.message });
     }
 }
 
+
 async function actualizar(req, res) {
     try {
-        await svc.actualizarCliente(Number(req.params.id), req.body);
+        await svc.actualizarCliente(Number(req.params.id), req.body, req.usuario);
         return res.json({ mensaje: 'Cliente actualizado' });
     } catch (err) {
         return res.status(400).json({ mensaje: err.message });
@@ -59,7 +60,7 @@ async function actualizar(req, res) {
 
 async function eliminar(req, res) {
     try {
-        await svc.eliminarCliente(Number(req.params.id));
+        await svc.eliminarCliente(Number(req.params.id), req.usuario);
         return res.json({ mensaje: 'Cliente desactivado' });
     } catch (err) {
         return res.status(400).json({ mensaje: err.message });

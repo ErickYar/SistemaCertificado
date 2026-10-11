@@ -43,7 +43,7 @@ async function listarColores() {
 async function listarCarrocerias(idCategoria) {
     if (idCategoria) {
         const [rows] = await pool.query(
-            `SELECT codigo, nombre
+            `SELECT id_carroceria, codigo, nombre
              FROM cat_carroceria
              WHERE id_categoria = ? AND activo = 1
              ORDER BY nombre`,
@@ -52,10 +52,10 @@ async function listarCarrocerias(idCategoria) {
         return rows;
     }
     const [rows] = await pool.query(
-        `SELECT codigo, nombre, id_categoria
+        `SELECT id_carroceria, codigo, nombre, id_categoria
          FROM cat_carroceria
          WHERE activo = 1
-         ORDER BY nombre`
+         ORDER BY id_categoria, nombre`
     );
     return rows;
 }
@@ -163,6 +163,50 @@ async function listarDistritosPorProvincia(idProvincia) {
     );
     return rows;
 }
+async function crearMarca(nombre) {
+    if (!nombre || !nombre.trim()) throw new Error('El nombre es obligatorio');
+    const limpio = nombre.trim().toUpperCase();
+
+    const [existe] = await pool.query(
+        `SELECT id_marca FROM cat_marca WHERE nombre = ? LIMIT 1`,
+        [limpio]
+    );
+    if (existe.length > 0) {
+        throw new Error('Ya existe una marca con ese nombre');
+    }
+
+    const [res] = await pool.query(
+        `INSERT INTO cat_marca (nombre) VALUES (?)`,
+        [limpio]
+    );
+    return { id_marca: res.insertId, nombre: limpio };
+}
+
+async function crearModelo(idMarca, nombre) {
+    if (!idMarca) throw new Error('Debes seleccionar una marca primero');
+    if (!nombre || !nombre.trim()) throw new Error('El nombre es obligatorio');
+    const limpio = nombre.trim().toUpperCase();
+
+    const [marca] = await pool.query(
+        `SELECT id_marca FROM cat_marca WHERE id_marca = ? LIMIT 1`,
+        [idMarca]
+    );
+    if (marca.length === 0) throw new Error('La marca no existe');
+
+    const [existe] = await pool.query(
+        `SELECT id_modelo FROM cat_modelo WHERE id_marca = ? AND nombre = ? LIMIT 1`,
+        [idMarca, limpio]
+    );
+    if (existe.length > 0) {
+        throw new Error('Esa marca ya tiene un modelo con ese nombre');
+    }
+
+    const [res] = await pool.query(
+        `INSERT INTO cat_modelo (id_marca, nombre) VALUES (?, ?)`,
+        [idMarca, limpio]
+    );
+    return { id_modelo: res.insertId, id_marca: idMarca, nombre: limpio };
+}
 
 module.exports = {
     listarCategorias,
@@ -180,5 +224,7 @@ module.exports = {
     listarClasesNeumatico,
     listarDepartamentos,
     listarProvinciasPorDepartamento,
-    listarDistritosPorProvincia
+    listarDistritosPorProvincia,
+    crearMarca,
+    crearModelo
 };

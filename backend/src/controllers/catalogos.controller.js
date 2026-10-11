@@ -25,7 +25,26 @@ const getClasesNeumatico  = (_req, res) => responder(res, () => catalogos.listar
 const getDepartamentos    = (_req, res) => responder(res, () => catalogos.listarDepartamentos());
 const getProvincias       = (req, res)  => responder(res, () => catalogos.listarProvinciasPorDepartamento(Number(req.params.idDepartamento)));
 const getDistritos        = (req, res)  => responder(res, () => catalogos.listarDistritosPorProvincia(Number(req.params.idProvincia)));
+const crearMarca = async (req, res) => {
+    try {
+        const { nombre } = req.body;
+        const marca = await catalogos.crearMarca(nombre);
+        res.status(201).json(marca);
+    } catch (err) {
+        res.status(400).json({ mensaje: err.message });
+    }
+};
 
+const crearModelo = async (req, res) => {
+    try {
+        const { idMarca } = req.params;
+        const { nombre } = req.body;
+        const modelo = await catalogos.crearModelo(Number(idMarca), nombre);
+        res.status(201).json(modelo);
+    } catch (err) {
+        res.status(400).json({ mensaje: err.message });
+    }
+};
 module.exports = {
     getCategorias,
     getMarcas,
@@ -42,5 +61,7 @@ module.exports = {
     getClasesNeumatico,
     getDepartamentos,
     getProvincias,
-    getDistritos
+    getDistritos,
+    crearMarca,
+    crearModelo
 };

@@ -1,4 +1,5 @@
 const { pool } = require('../config/database');
+const auditoria = require('./auditoria.service');
 
 async function buscarPorDocumento(documento) {
     const [rows] = await pool.query(
@@ -31,7 +32,7 @@ async function obtenerPorId(id) {
     return rows.length > 0 ? rows[0] : null;
 }
 
-async function crearCliente(data) {
+async function crearCliente(data, usuario) {
     if (data.tipo_persona === 'NATURAL') {
         if (!data.dni) throw new Error('El DNI es obligatorio para persona natural');
         if (!data.nombres || !data.apellidos) {
@@ -71,10 +72,22 @@ async function crearCliente(data) {
         ]
     );
 
-    return res.insertId;
+    const idCliente = res.insertId;
+
+    // 📝 AUDITORÍA
+    await auditoria.registrar({
+        tabla: 'cliente',
+        id_registro: idCliente,
+        accion: 'CREAR',
+        usuario,
+        datosNuevos: data,
+        descripcion: `Cliente creado: ${data.razon_social || `${data.nombres} ${data.apellidos}`}`
+    });
+
+    return idCliente;
 }
 
-async function actualizarCliente(id, data) {
+async function actualizarCliente(id, data, usuario) {
     const actual = await obtenerPorId(id);
     if (!actual) throw new Error('Cliente no encontrado');
 
@@ -107,14 +120,38 @@ async function actualizarCliente(id, data) {
         `UPDATE cliente SET ${campos.join(', ')} WHERE id_cliente = ?`,
         valores
     );
+
+    // 📝 AUDITORÍA
+    await auditoria.registrar({
+        tabla: 'cliente',
+        id_registro: id,
+        accion: 'ACTUALIZAR',
+        usuario,
+        datosAnteriores: actual,
+        datosNuevos: { ...actual, ...data },
+        descripcion: `Cliente actualizado: ${data.razon_social || actual.razon_social || `${actual.nombres} ${actual.apellidos}`}`
+    });
 }
 
-async function eliminarCliente(id) {
+async function eliminarCliente(id, usuario) {
+    const actual = await obtenerPorId(id);
+    if (!actual) throw new Error('Cliente no encontrado');
+
     const [res] = await pool.query(
         `UPDATE cliente SET activo = 0 WHERE id_cliente = ?`,
         [id]
     );
     if (res.affectedRows === 0) throw new Error('Cliente no encontrado');
+
+    // 📝 AUDITORÍA
+    await auditoria.registrar({
+        tabla: 'cliente',
+        id_registro: id,
+        accion: 'ELIMINAR',
+        usuario,
+        datosAnteriores: actual,
+        descripcion: `Cliente eliminado: ${actual.razon_social || `${actual.nombres} ${actual.apellidos}`}`
+    });
 }
 
 async function listarClientes() {

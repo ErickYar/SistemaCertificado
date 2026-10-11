@@ -23,5 +23,6 @@ router.get('/clases-neumatico',                          ctrl.getClasesNeumatico
 router.get('/departamentos',                             ctrl.getDepartamentos);
 router.get('/departamentos/:idDepartamento/provincias',  ctrl.getProvincias);
 router.get('/provincias/:idProvincia/distritos',         ctrl.getDistritos);
-
+router.post('/marcas',                                   ctrl.crearMarca);
+router.post('/marcas/:idMarca/modelos',                  ctrl.crearModelo);
 module.exports = router;

@@ -30,7 +30,7 @@ async function listarVehiculos() {
          LEFT JOIN cat_color           co1 ON co1.codigo   = v.cod_color_1
          LEFT JOIN cat_color           co2 ON co2.codigo   = v.cod_color_2
          LEFT JOIN cat_color           co3 ON co3.codigo   = v.cod_color_3
-         LEFT JOIN cat_carroceria      cc  ON cc.codigo    = v.id_carroceria
+         LEFT JOIN cat_carroceria      cc  ON cc.id_carroceria = v.id_carroceria
          LEFT JOIN cat_tipo_uso        tu  ON tu.id_uso    = v.id_tipo_uso
          LEFT JOIN cat_forma_rodamiento fr ON fr.id_forma = v.id_forma_rodamiento
          LEFT JOIN cat_condicion       cdo ON cdo.codigo   = v.cod_condicion
