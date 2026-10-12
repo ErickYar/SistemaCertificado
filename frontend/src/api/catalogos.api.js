@@ -91,3 +91,8 @@ export const crearModelo = async (idMarca, nombre) => {
     const { data } = await api.post(`/catalogos/marcas/${idMarca}/modelos`, { nombre });
     return data;
 };
+
+export const listarEmisores = async () => {
+    const { data } = await api.get('/catalogos/emisores');
+    return data;
+};

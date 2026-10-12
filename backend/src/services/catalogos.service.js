@@ -207,7 +207,15 @@ async function crearModelo(idMarca, nombre) {
     );
     return { id_modelo: res.insertId, id_marca: idMarca, nombre: limpio };
 }
-
+async function listarEmisores() {
+    const [rows] = await pool.query(
+        `SELECT id_emisor, razon_social, representante, colegiatura
+         FROM emisor_certificado
+         WHERE activo = 1
+         ORDER BY razon_social`
+    );
+    return rows;
+}
 module.exports = {
     listarCategorias,
     listarMarcas,
@@ -226,5 +234,6 @@ module.exports = {
     listarProvinciasPorDepartamento,
     listarDistritosPorProvincia,
     crearMarca,
-    crearModelo
+    crearModelo,
+    listarEmisores
 };

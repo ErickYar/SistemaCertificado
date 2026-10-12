@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import * as vehiculoApi from '../../api/vehiculo.api';
 import Modal from '../../components/Modal';
+import ModalConfirmacion from '../../components/ModalConfirmacion';
 import VehiculoForm from './VehiculoForm';
 
 export default function Vehiculos() {
@@ -9,9 +10,17 @@ export default function Vehiculos() {
     const [cargando, setCargando]   = useState(true);
     const [error, setError]         = useState('');
 
-    // Modal
-    const [modalAbierto, setModalAbierto]       = useState(false);
-    const [vehiculoEditar, setVehiculoEditar]   = useState(null);
+    // Modal crear/editar
+    const [modalAbierto, setModalAbierto]     = useState(false);
+    const [vehiculoEditar, setVehiculoEditar] = useState(null);
+
+    // Modal eliminar
+    const [modalEliminar, setModalEliminar]       = useState(false);
+    const [vehiculoEliminar, setVehiculoEliminar] = useState(null);
+    const [eliminando, setEliminando]             = useState(false);
+
+    // Aviso
+    const [aviso, setAviso] = useState(null);
 
     useEffect(() => {
         cargarVehiculos();
@@ -25,6 +34,12 @@ export default function Vehiculos() {
         const timer = setTimeout(() => buscar(busqueda.trim()), 500);
         return () => clearTimeout(timer);
     }, [busqueda]);
+
+    useEffect(() => {
+        if (!aviso) return;
+        const timer = setTimeout(() => setAviso(null), 3000);
+        return () => clearTimeout(timer);
+    }, [aviso]);
 
     const cargarVehiculos = async () => {
         setCargando(true);
@@ -60,7 +75,7 @@ export default function Vehiculos() {
     };
 
     // ------------------------------------------------------------
-    // Modal Crear/Editar
+    // Crear/Editar
     // ------------------------------------------------------------
     const abrirNuevo = () => {
         setVehiculoEditar(null);
@@ -69,7 +84,6 @@ export default function Vehiculos() {
 
     const abrirEditar = async (v) => {
         try {
-            // Cargar datos completos (con motor)
             const completo = await vehiculoApi.obtener(v.id_vehiculo);
             setVehiculoEditar(completo);
             setModalAbierto(true);
@@ -87,7 +101,44 @@ export default function Vehiculos() {
         cerrarModal();
         setBusqueda('');
         cargarVehiculos();
+        setAviso({ tipo: 'success', mensaje: 'Vehículo guardado correctamente' });
     };
+
+    // ------------------------------------------------------------
+    // Eliminar
+    // ------------------------------------------------------------
+    const abrirEliminar = (v) => {
+        setVehiculoEliminar(v);
+        setModalEliminar(true);
+    };
+
+    const cerrarEliminar = () => {
+        setModalEliminar(false);
+        setVehiculoEliminar(null);
+    };
+
+    const confirmarEliminar = async () => {
+        if (!vehiculoEliminar) return;
+
+        setEliminando(true);
+        try {
+            await vehiculoApi.eliminar(vehiculoEliminar.id_vehiculo);
+            cerrarEliminar();
+            cargarVehiculos();
+            setAviso({ tipo: 'success', mensaje: 'Vehículo eliminado correctamente' });
+        } catch (err) {
+            setError(err.response?.data?.mensaje || 'Error al eliminar vehículo');
+            cerrarEliminar();
+        } finally {
+            setEliminando(false);
+        }
+    };
+
+    // ------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------
+    const getNombreCliente = (v) =>
+        v.razon_social || `${v.nombres || ''} ${v.apellidos || ''}`.trim() || '—';
 
     return (
         <div>
@@ -106,6 +157,17 @@ export default function Vehiculos() {
                     + Nuevo Vehículo
                 </button>
             </div>
+
+            {/* Aviso */}
+            {aviso && (
+                <div className={`mb-4 px-4 py-3 rounded-lg border ${
+                    aviso.tipo === 'success'
+                        ? 'bg-green-100 border-green-400 text-green-700'
+                        : 'bg-red-100 border-red-400 text-red-700'
+                }`}>
+                    {aviso.mensaje}
+                </div>
+            )}
 
             {/* Búsqueda */}
             <div className="bg-white rounded-lg shadow p-4 mb-6">
@@ -177,7 +239,7 @@ export default function Vehiculos() {
                                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">{v.modelo || '—'}</td>
                                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{v.anio_modelo || '—'}</td>
                                     <td className="px-4 py-3 text-sm text-gray-700 max-w-xs truncate">
-                                        {v.razon_social || `${v.nombres || ''} ${v.apellidos || ''}`.trim() || '—'}
+                                        {getNombreCliente(v)}
                                     </td>
                                     <td className="px-4 py-3 whitespace-nowrap text-right text-sm space-x-2">
                                         <button
@@ -188,7 +250,7 @@ export default function Vehiculos() {
                                         </button>
                                         <button
                                             className="text-red-600 hover:text-red-800 font-medium"
-                                            onClick={() => alert(`Eliminar vehículo ${v.id_vehiculo}`)}
+                                            onClick={() => abrirEliminar(v)}
                                         >
                                             Eliminar
                                         </button>
@@ -208,7 +270,7 @@ export default function Vehiculos() {
                 </p>
             )}
 
-            {/* Modal */}
+            {/* Modal Crear/Editar */}
             <Modal
                 abierto={modalAbierto}
                 onCerrar={cerrarModal}
@@ -221,6 +283,22 @@ export default function Vehiculos() {
                     onCancelar={cerrarModal}
                 />
             </Modal>
+
+            {/* Modal Confirmar Eliminar */}
+            <ModalConfirmacion
+                abierto={modalEliminar}
+                onCerrar={cerrarEliminar}
+                onConfirmar={confirmarEliminar}
+                titulo="Eliminar vehículo"
+                mensaje={
+                    vehiculoEliminar
+                        ? `¿Estás seguro de eliminar el vehículo con placa "${vehiculoEliminar.placa}"? Esta acción desactivará el registro.`
+                        : ''
+                }
+                textoConfirmar="Sí, eliminar"
+                variante="danger"
+                cargando={eliminando}
+            />
         </div>
     );
 }

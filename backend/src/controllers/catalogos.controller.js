@@ -25,6 +25,7 @@ const getClasesNeumatico  = (_req, res) => responder(res, () => catalogos.listar
 const getDepartamentos    = (_req, res) => responder(res, () => catalogos.listarDepartamentos());
 const getProvincias       = (req, res)  => responder(res, () => catalogos.listarProvinciasPorDepartamento(Number(req.params.idDepartamento)));
 const getDistritos        = (req, res)  => responder(res, () => catalogos.listarDistritosPorProvincia(Number(req.params.idProvincia)));
+const getEmisores         = (_req, res) => responder(res, () => catalogos.listarEmisores());
 const crearMarca = async (req, res) => {
     try {
         const { nombre } = req.body;
@@ -63,5 +64,6 @@ module.exports = {
     getProvincias,
     getDistritos,
     crearMarca,
+    getEmisores,
     crearModelo
 };
