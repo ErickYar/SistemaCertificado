@@ -11,63 +11,57 @@ const TIPOS = [
     { value: 'FABRICACION',  label: 'Fabricación',  icon: '🏭', desc: 'Certificado de fabricación' },
 ];
 
+const ACCIONES_MOD = [
+    { value: 'MODIFICAR',   label: 'MODIFICAR',   color: 'bg-blue-100 text-blue-700' },
+    { value: 'INCORPORAR',  label: 'INCORPORAR',  color: 'bg-green-100 text-green-700' },
+    { value: 'ADECUAR',     label: 'ADECUAR',     color: 'bg-purple-100 text-purple-700' },
+    { value: 'RECTIFICAR',  label: 'RECTIFICAR',  color: 'bg-orange-100 text-orange-700' },
+];
+
 const formInicial = {
     tipo_certificado: '',
     id_vehiculo: '',
     id_cliente: '',
     id_emisor: '',
-    estado: 'BORRADOR',
     observaciones_generales: '',
     observaciones: [''],
-    // MODIFICACION
-    modificaciones: [{ campo_modificado: '', valor_anterior: '', valor_nuevo: '' }],
-    // BONIFICACION
+    modificaciones: [{ accion: 'MODIFICAR', campo_modificado: '', valor_nuevo: '' }],
     bonificacion: {
-        categoria: '',
-        vin_serie: '',
-        marca: '',
-        modelo: '',
-        anio_modelo: '',
-        numero_motor: '',
-        numero_ejes: '',
-        numero_ruedas: '',
-        distancia_ejes_m: '',
-        distancia_kingpin_m: '',
-        ciudad_emision: 'LIMA',
-        fecha_emision_doc: '',
-        observaciones: '',
-        ejes: []
+        categoria: '', vin_serie: '', marca: '', modelo: '', anio_modelo: '',
+        numero_motor: '', numero_ejes: '', numero_ruedas: '',
+        distancia_ejes_m: '', distancia_kingpin_m: '',
+        ciudad_emision: 'LIMA', fecha_emision_doc: '',
+        observaciones: '', ejes: []
     }
 };
 
 export default function CertificadoForm({ onGuardado, onCancelar }) {
-    const [form, setForm]                 = useState(formInicial);
-    const [error, setError]               = useState('');
-    const [guardando, setGuardando]       = useState(false);
+    const [form, setForm]               = useState(formInicial);
+    const [error, setError]             = useState('');
+    const [guardando, setGuardando]     = useState(false);
 
-    const [vehiculos, setVehiculos]       = useState([]);
-    const [clientes, setClientes]         = useState([]);
-    const [emisores, setEmisores]         = useState([]);
+    const [emisores, setEmisores]             = useState([]);
     const [tiposSuspension, setTiposSuspension]   = useState([]);
     const [clasesNeumatico, setClasesNeumatico]   = useState([]);
+
+    // Búsqueda de vehículo
+    const [busquedaPlaca, setBusquedaPlaca]         = useState('');
+    const [resultadosVehiculo, setResultadosVehiculo] = useState([]);
+    const [vehiculoSeleccionado, setVehiculoSeleccionado] = useState(null);
+    const [buscandoVehiculo, setBuscandoVehiculo]   = useState(false);
 
     // ------------------------------------------------------------
     // Cargar catálogos
     // ------------------------------------------------------------
     useEffect(() => {
         Promise.all([
-            vehiculoApi.listar(),
-            clienteApi.listar(),
             catalogosApi.listarEmisores(),
             catalogosApi.listarTiposSuspension(),
             catalogosApi.listarClasesNeumatico(),
-        ]).then(([veh, cli, emi, susp, cla]) => {
-            setVehiculos(veh);
-            setClientes(cli);
+        ]).then(([emi, susp, cla]) => {
             setEmisores(emi);
             setTiposSuspension(susp);
             setClasesNeumatico(cla);
-            // Seleccionar primer emisor por defecto
             if (emi.length > 0) {
                 setForm((prev) => ({ ...prev, id_emisor: emi[0].id_emisor }));
             }
@@ -76,6 +70,57 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
             setError('Error al cargar catálogos');
         });
     }, []);
+
+    // ------------------------------------------------------------
+    // Buscar vehículo por placa (debounce)
+    // ------------------------------------------------------------
+    useEffect(() => {
+        if (busquedaPlaca.trim().length < 1) {
+            setResultadosVehiculo([]);
+            return;
+        }
+        const timer = setTimeout(() => buscarVehiculo(busquedaPlaca.trim()), 400);
+        return () => clearTimeout(timer);
+    }, [busquedaPlaca]);
+
+    const buscarVehiculo = async (texto) => {
+        setBuscandoVehiculo(true);
+        try {
+            const data = await vehiculoApi.buscarPorPlaca(texto.toUpperCase());
+            setResultadosVehiculo(data);
+        } catch (err) {
+            console.error('Error buscando vehículo:', err);
+            setResultadosVehiculo([]);
+        } finally {
+            setBuscandoVehiculo(false);
+        }
+    };
+
+    // ------------------------------------------------------------
+    // Seleccionar vehículo → auto-completar cliente
+    // ------------------------------------------------------------
+    const seleccionarVehiculo = (v) => {
+        setVehiculoSeleccionado(v);
+        setBusquedaPlaca('');
+        setResultadosVehiculo([]);
+
+        setForm((prev) => ({
+            ...prev,
+            id_vehiculo: v.id_vehiculo,
+            id_cliente: v.id_cliente,
+            // Si es bonificación, autocompletar campos
+            bonificacion: {
+                ...prev.bonificacion,
+                categoria: v.categoria || '',
+                vin_serie: v.numero_vin || '',
+                marca: v.marca || '',
+                modelo: v.modelo || '',
+                anio_modelo: v.anio_modelo || '',
+                numero_ejes: v.ejes || '',
+                numero_ruedas: v.ruedas || ''
+            }
+        }));
+    };
 
     // ------------------------------------------------------------
     // Handlers generales
@@ -94,14 +139,17 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
     };
 
     // ------------------------------------------------------------
-    // Modificaciones (array)
+    // Modificaciones
     // ------------------------------------------------------------
     const agregarModificacion = () => {
-        setForm((prev) => ({
-            ...prev,
-            modificaciones: [...prev.modificaciones, { campo_modificado: '', valor_anterior: '', valor_nuevo: '' }]
-        }));
-    };
+    setForm((prev) => ({
+        ...prev,
+        modificaciones: [
+            ...prev.modificaciones,
+            { accion: 'MODIFICAR', campo_modificado: '', valor_nuevo: '' }
+        ]
+    }));
+};
 
     const eliminarModificacion = (index) => {
         setForm((prev) => ({
@@ -119,7 +167,7 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
     };
 
     // ------------------------------------------------------------
-    // Observaciones (array de strings)
+    // Observaciones
     // ------------------------------------------------------------
     const agregarObservacion = () => {
         setForm((prev) => ({ ...prev, observaciones: [...prev.observaciones, ''] }));
@@ -141,7 +189,7 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
     };
 
     // ------------------------------------------------------------
-    // Ejes (para BONIFICACION)
+    // Ejes (bonificación)
     // ------------------------------------------------------------
     const agregarEje = () => {
         setForm((prev) => ({
@@ -190,30 +238,6 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
     };
 
     // ------------------------------------------------------------
-    // Autocompletar campos de BONIFICACIÓN con datos del vehículo
-    // ------------------------------------------------------------
-    useEffect(() => {
-        if (form.tipo_certificado === 'BONIFICACION' && form.id_vehiculo) {
-            const v = vehiculos.find(x => String(x.id_vehiculo) === String(form.id_vehiculo));
-            if (v) {
-                setForm((prev) => ({
-                    ...prev,
-                    bonificacion: {
-                        ...prev.bonificacion,
-                        categoria: v.categoria || '',
-                        vin_serie: v.numero_vin || '',
-                        marca: v.marca || '',
-                        modelo: v.modelo || '',
-                        anio_modelo: v.anio_modelo || '',
-                        numero_ejes: v.ejes || '',
-                        numero_ruedas: v.ruedas || ''
-                    }
-                }));
-            }
-        }
-    }, [form.id_vehiculo, form.tipo_certificado, vehiculos]);
-
-    // ------------------------------------------------------------
     // Validar y guardar
     // ------------------------------------------------------------
     const validar = () => {
@@ -238,13 +262,12 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
             validar();
             setGuardando(true);
 
-            // Preparar payload
             const payload = {
                 tipo_certificado: form.tipo_certificado,
                 id_vehiculo: form.id_vehiculo,
                 id_cliente: form.id_cliente,
                 id_emisor: form.id_emisor,
-                estado: form.estado,
+                estado: 'EMITIDO',
                 observaciones_generales: form.observaciones_generales || null,
                 observaciones: form.observaciones.filter(o => o.trim() !== ''),
             };
@@ -260,13 +283,8 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                 };
             }
 
-            if (form.tipo_certificado === 'MONTAJE') {
-                payload.montaje = {};
-            }
-
-            if (form.tipo_certificado === 'FABRICACION') {
-                payload.fabricacion = {};
-            }
+            if (form.tipo_certificado === 'MONTAJE')     payload.montaje = {};
+            if (form.tipo_certificado === 'FABRICACION') payload.fabricacion = {};
 
             await certificadoApi.crear(payload);
             onGuardado();
@@ -283,9 +301,7 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
 
-            {/* ============================================ */}
-            {/* 1. TIPO DE CERTIFICADO */}
-            {/* ============================================ */}
+            {/* 1. TIPO */}
             <section>
                 <h3 className="text-sm font-bold text-gray-800 uppercase mb-3 pb-2 border-b border-gray-200">
                     1. Tipo de Certificado
@@ -310,9 +326,7 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                 </div>
             </section>
 
-            {/* ============================================ */}
             {/* 2. DATOS GENERALES */}
-            {/* ============================================ */}
             {form.tipo_certificado && (
                 <section>
                     <h3 className="text-sm font-bold text-gray-800 uppercase mb-3 pb-2 border-b border-gray-200">
@@ -320,59 +334,73 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-                        {/* Vehículo */}
+                        {/* BUSCADOR DE VEHÍCULO */}
                         <div className="md:col-span-2">
                             <label className="block text-xs font-medium text-gray-700 mb-1">Vehículo *</label>
-                            <select
-                                name="id_vehiculo"
-                                value={form.id_vehiculo}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                            >
-                                <option value="">-- Seleccionar vehículo --</option>
-                                {vehiculos.map((v) => (
-                                    <option key={v.id_vehiculo} value={v.id_vehiculo}>
-                                        {v.placa} — {v.marca || ''} {v.modelo || ''} ({v.categoria || ''})
-                                    </option>
-                                ))}
-                            </select>
+                            {vehiculoSeleccionado ? (
+                                <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                                    <div>
+                                        <div className="font-bold text-blue-800 font-mono">{vehiculoSeleccionado.placa}</div>
+                                        <div className="text-xs text-blue-600">
+                                            {vehiculoSeleccionado.marca || ''} {vehiculoSeleccionado.modelo || ''} — {vehiculoSeleccionado.numero_vin}
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setVehiculoSeleccionado(null);
+                                            setForm(prev => ({ ...prev, id_vehiculo: '', id_cliente: '' }));
+                                        }}
+                                        className="text-red-600 hover:text-red-800 font-bold text-lg"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        value={busquedaPlaca}
+                                        onChange={(e) => setBusquedaPlaca(e.target.value.toUpperCase())}
+                                        placeholder="🔍 Escriba la placa (ej: TCJ-892)..."
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    {buscandoVehiculo && (
+                                        <div className="absolute right-3 top-2.5 text-xs text-gray-400">Buscando...</div>
+                                    )}
+
+                                    {/* Resultados */}
+                                    {resultadosVehiculo.length > 0 && (
+                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                                            {resultadosVehiculo.map((v) => (
+                                                <button
+                                                    key={v.id_vehiculo}
+                                                    type="button"
+                                                    onClick={() => seleccionarVehiculo(v)}
+                                                    className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-0"
+                                                >
+                                                    <div className="font-bold text-blue-700 font-mono text-sm">{v.placa}</div>
+                                                    <div className="text-xs text-gray-600">
+                                                        {v.marca || ''} {v.modelo || ''} — {v.numero_vin}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500">
+                                                        {v.razon_social || `${v.nombres || ''} ${v.apellidos || ''}`}
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {busquedaPlaca.length >= 2 && !buscandoVehiculo && resultadosVehiculo.length === 0 && (
+                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow p-3 text-sm text-gray-500">
+                                            No se encontraron vehículos con esa placa.
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
-                        {/* Estado */}
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Estado</label>
-                            <select
-                                name="estado"
-                                value={form.estado}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                            >
-                                <option value="BORRADOR">BORRADOR</option>
-                                <option value="EMITIDO">EMITIDO</option>
-                                <option value="PAGADO">PAGADO</option>
-                                <option value="ENTREGADO">ENTREGADO</option>
-                            </select>
-                        </div>
-
-                        {/* Cliente */}
-                        <div className="md:col-span-2">
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Cliente *</label>
-                            <select
-                                name="id_cliente"
-                                value={form.id_cliente}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                            >
-                                <option value="">-- Seleccionar cliente --</option>
-                                {clientes.map((c) => (
-                                    <option key={c.id_cliente} value={c.id_cliente}>
-                                        [{c.tipo_persona}] {c.razon_social || `${c.nombres} ${c.apellidos}`}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Emisor */}
+                        {/* EMISOR */}
                         <div>
                             <label className="block text-xs font-medium text-gray-700 mb-1">Emisor *</label>
                             <select
@@ -383,21 +411,36 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                             >
                                 <option value="">-- Seleccionar emisor --</option>
                                 {emisores.map((e) => (
-                                    <option key={e.id_emisor} value={e.id_emisor}>
-                                        {e.razon_social}
-                                    </option>
+                                    <option key={e.id_emisor} value={e.id_emisor}>{e.razon_social}</option>
                                 ))}
                             </select>
+                        </div>
+
+                        {/* CLIENTE (auto-completado, solo lectura) */}
+                        <div className="md:col-span-3">
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Cliente * <span className="text-gray-400 font-normal">(auto-completado desde el vehículo)</span>
+                            </label>
+                            {vehiculoSeleccionado ? (
+                                <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800">
+                                    {vehiculoSeleccionado.razon_social
+                                        || `${vehiculoSeleccionado.nombres || ''} ${vehiculoSeleccionado.apellidos || ''}`.trim()
+                                        || '—'}
+                                    <span className="ml-2 text-xs text-gray-500">
+                                        ({vehiculoSeleccionado.tipo_persona})
+                                    </span>
+                                </div>
+                            ) : (
+                                <div className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-400 italic">
+                                    Seleccione un vehículo para auto-completar
+                                </div>
+                            )}
                         </div>
                     </div>
                 </section>
             )}
 
-            {/* ============================================ */}
-            {/* 3. CAMPOS ESPECÍFICOS SEGÚN TIPO */}
-            {/* ============================================ */}
-
-            {/* MODIFICACIÓN */}
+            {/* 3. MODIFICACIONES */}
             {form.tipo_certificado === 'MODIFICACION' && (
                 <section>
                     <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-200">
@@ -409,51 +452,72 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                             onClick={agregarModificacion}
                             className="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg font-medium"
                         >
-                            + Agregar
+                            + Agregar campo a modificar
                         </button>
                     </div>
 
+                    <p className="text-xs text-gray-500 mb-3">
+                        Agregue una fila por cada característica a modificar (peso, color, motor, etc.).
+                    </p>
+
                     <div className="space-y-3">
                         {form.modificaciones.map((m, idx) => (
-                            <div key={idx} className="grid grid-cols-12 gap-2 items-end">
-                                <div className="col-span-12 md:col-span-4">
-                                    <label className="block text-xs text-gray-600 mb-1">Campo modificado</label>
-                                    <input
-                                        type="text"
-                                        value={m.campo_modificado}
-                                        onChange={(e) => handleModificacion(idx, 'campo_modificado', e.target.value)}
-                                        placeholder="Ej: cod_color_1"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <div className="col-span-6 md:col-span-3">
-                                    <label className="block text-xs text-gray-600 mb-1">Valor anterior</label>
-                                    <input
-                                        type="text"
-                                        value={m.valor_anterior}
-                                        onChange={(e) => handleModificacion(idx, 'valor_anterior', e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <div className="col-span-6 md:col-span-3">
-                                    <label className="block text-xs text-gray-600 mb-1">Valor nuevo</label>
-                                    <input
-                                        type="text"
-                                        value={m.valor_nuevo}
-                                        onChange={(e) => handleModificacion(idx, 'valor_nuevo', e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <div className="col-span-12 md:col-span-2">
+                            <div key={idx} className="bg-gray-50 rounded-lg p-3">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-bold text-gray-600">#{idx + 1}</span>
                                     {form.modificaciones.length > 1 && (
                                         <button
                                             type="button"
                                             onClick={() => eliminarModificacion(idx)}
-                                            className="w-full px-3 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-sm font-medium"
+                                            className="text-red-600 hover:text-red-800 text-xs font-medium"
                                         >
                                             ✕ Quitar
                                         </button>
                                     )}
+                                </div>
+
+                                <div className="grid grid-cols-12 gap-2">
+                                    {/* Acción */}
+                                    <div className="col-span-12 md:col-span-2">
+                                        <label className="block text-xs text-gray-600 mb-1">Acción</label>
+                                        <select
+                                            value={m.accion}
+                                            onChange={(e) => handleModificacion(idx, 'accion', e.target.value)}
+                                            className="w-full px-2 py-2 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            {ACCIONES_MOD.map(a => (
+                                                <option key={a.value} value={a.value}>{a.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Campo */}
+                                    <div className="col-span-12 md:col-span-4">
+                                        <label className="block text-xs text-gray-600 mb-1">Característica</label>
+                                        <input
+                                            type="text"
+                                            value={m.campo_modificado}
+                                            onChange={(e) => handleModificacion(idx, 'campo_modificado', e.target.value)}
+                                            placeholder="Ej: Peso Neto, Color, N° Motor"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+
+                                    {/* Valor nuevo (lo que saldrá en el certificado) */}
+                                    <div className="col-span-12 md:col-span-6">
+                                        <label className="block text-xs text-gray-600 mb-1">
+                                            Valor a registrar <span className="text-gray-400">(el que aparecerá en el certificado)</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={m.valor_nuevo}
+                                            onChange={(e) => handleModificacion(idx, 'valor_nuevo', e.target.value)}
+                                            placeholder="Ej: 8,800 Tn"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+
+                                 
                                 </div>
                             </div>
                         ))}
@@ -461,7 +525,7 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                 </section>
             )}
 
-            {/* BONIFICACIÓN */}
+            {/* BONIFICACIÓN (sin cambios) */}
             {form.tipo_certificado === 'BONIFICACION' && (
                 <section>
                     <h3 className="text-sm font-bold text-gray-800 uppercase mb-3 pb-2 border-b border-gray-200">
@@ -530,7 +594,6 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                         </div>
                     </div>
 
-                    {/* EJES */}
                     <div className="mt-6">
                         <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-200">
                             <h4 className="text-sm font-bold text-gray-800 uppercase">Detalle por eje</h4>
@@ -544,7 +607,7 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                         </div>
 
                         {form.bonificacion.ejes.length === 0 && (
-                            <p className="text-sm text-gray-500 italic">Sin ejes registrados. Agregue al menos uno.</p>
+                            <p className="text-sm text-gray-500 italic">Sin ejes registrados.</p>
                         )}
 
                         {form.bonificacion.ejes.map((e, idx) => (
@@ -562,31 +625,31 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                     <input type="text" placeholder="Rodada (RD/RS)" value={e.tipo_rodada}
                                         onChange={(ev) => handleEje(idx, 'tipo_rodada', ev.target.value)}
-                                        className="px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        className="px-2 py-1 border border-gray-300 rounded text-xs" />
                                     <select value={e.cod_tipo_suspension}
                                         onChange={(ev) => handleEje(idx, 'cod_tipo_suspension', ev.target.value)}
-                                        className="px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        className="px-2 py-1 border border-gray-300 rounded text-xs bg-white">
                                         <option value="">Suspensión...</option>
                                         {tiposSuspension.map(s => <option key={s.codigo} value={s.codigo}>{s.nombre}</option>)}
                                     </select>
                                     <input type="text" placeholder="Cap. eje (kg)" value={e.capacidad_eje_kg}
                                         onChange={(ev) => handleEje(idx, 'capacidad_eje_kg', ev.target.value)}
-                                        className="px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        className="px-2 py-1 border border-gray-300 rounded text-xs" />
                                     <input type="text" placeholder="Cap. susp (kg)" value={e.capacidad_suspension_kg}
                                         onChange={(ev) => handleEje(idx, 'capacidad_suspension_kg', ev.target.value)}
-                                        className="px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        className="px-2 py-1 border border-gray-300 rounded text-xs" />
                                     <input type="text" placeholder="Cap. neum (kg)" value={e.capacidad_neumatico_kg}
                                         onChange={(ev) => handleEje(idx, 'capacidad_neumatico_kg', ev.target.value)}
-                                        className="px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        className="px-2 py-1 border border-gray-300 rounded text-xs" />
                                     <input type="text" placeholder="Medida aro" value={e.medida_aro}
                                         onChange={(ev) => handleEje(idx, 'medida_aro', ev.target.value)}
-                                        className="px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        className="px-2 py-1 border border-gray-300 rounded text-xs" />
                                     <input type="text" placeholder="Medida neumático" value={e.medida_neumatico}
                                         onChange={(ev) => handleEje(idx, 'medida_neumatico', ev.target.value)}
-                                        className="px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        className="px-2 py-1 border border-gray-300 rounded text-xs" />
                                     <select value={e.cod_clase_neumatico}
                                         onChange={(ev) => handleEje(idx, 'cod_clase_neumatico', ev.target.value)}
-                                        className="px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        className="px-2 py-1 border border-gray-300 rounded text-xs bg-white">
                                         <option value="">Clase...</option>
                                         {clasesNeumatico.map(c => <option key={c.codigo} value={c.codigo}>{c.nombre}</option>)}
                                     </select>
@@ -604,14 +667,12 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                         3. Datos Específicos
                     </h3>
                     <p className="text-sm text-gray-500 italic">
-                        Este tipo de certificado se guarda con datos básicos. Los campos específicos se pueden agregar más adelante.
+                        Este tipo de certificado se guarda con datos básicos.
                     </p>
                 </section>
             )}
 
-            {/* ============================================ */}
             {/* 4. OBSERVACIONES */}
-            {/* ============================================ */}
             {form.tipo_certificado && (
                 <section>
                     <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-200">
@@ -646,7 +707,7 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                                 type="text"
                                 value={o}
                                 onChange={(e) => handleObservacion(idx, e.target.value)}
-                                placeholder="Ej: Distancia entre ejes posteriores: 1.30 m"
+                                placeholder="Ej: SE RESPETA LOS PARÁMETROS DEL FABRICANTE..."
                                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                             {form.observaciones.length > 1 && (
@@ -663,14 +724,12 @@ export default function CertificadoForm({ onGuardado, onCancelar }) {
                 </section>
             )}
 
-            {/* Error */}
             {error && (
                 <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">
                     {error}
                 </div>
             )}
 
-            {/* Botones */}
             <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
                 <button
                     type="button"

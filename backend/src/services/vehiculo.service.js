@@ -68,14 +68,15 @@ async function buscarPorPlaca(placa) {
     const [rows] = await pool.query(
         `SELECT v.*,
                 ma.nombre AS marca, mo.nombre AS modelo,
-                cl.razon_social, cl.nombres, cl.apellidos
+                cl.tipo_persona, cl.razon_social, cl.nombres, cl.apellidos, cl.dni, cl.ruc
          FROM vehiculo v
          LEFT JOIN cat_marca  ma ON ma.id_marca  = v.id_marca
          LEFT JOIN cat_modelo mo ON mo.id_modelo = v.id_modelo
          LEFT JOIN cliente    cl ON cl.id_cliente = v.id_cliente
-         WHERE v.placa = ? AND v.activo = 1
-         ORDER BY v.fecha_registro DESC`,
-        [placa]
+         WHERE v.placa LIKE ? AND v.activo = 1
+         ORDER BY v.fecha_registro DESC
+         LIMIT 10`,
+        [`%${placa}%`]  
     );
     return rows;
 }
