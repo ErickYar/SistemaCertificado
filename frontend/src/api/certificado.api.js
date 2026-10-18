@@ -20,8 +20,8 @@ export const crear = async (certificado) => {
     return data;
 };
 
-export const actualizarEstado = async (id, estado) => {
-    const { data } = await api.patch(`/certificados/${id}/estado`, { estado });
+export const actualizarEstado = async (id, payload) => {
+    const { data } = await api.patch(`/certificados/${id}/estado`, payload);
     return data;
 };
 
