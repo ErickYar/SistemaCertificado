@@ -399,18 +399,84 @@ async function listarCertificados() {
 // ACTUALIZAR ESTADO
 // ============================================================
 
-async function actualizarEstado(id, estado) {
-    const estadosValidos = ['BORRADOR', 'EMITIDO', 'PAGADO', 'ENTREGADO', 'ANULADO'];
-    if (!estadosValidos.includes(estado)) {
-        throw new Error(`estado debe ser uno de: ${estadosValidos.join(', ')}`);
-    }
+//async function actualizarEstado(id, estado) {
+//    const estadosValidos = ['BORRADOR', 'EMITIDO', 'PAGADO', 'ENTREGADO', 'ANULADO'];
+//    if (!estadosValidos.includes(estado)) {
+//        throw new Error(`estado debe ser uno de: ${estadosValidos.join(', ')}`);
+//    }
+//
+//    const [res] = await pool.query(
+//        `UPDATE certificado SET estado = ? WHERE id_certificado = ? AND activo = 1`,
+//        [estado, id]
+//    );
+//    if (res.affectedRows === 0) throw new Error('Certificado no encontrado');
+//}
 
-    const [res] = await pool.query(
-        `UPDATE certificado SET estado = ? WHERE id_certificado = ? AND activo = 1`,
-        [estado, id]
-    );
-    if (res.affectedRows === 0) throw new Error('Certificado no encontrado');
+async function actualizarEstado(id, estado, datosPago = null) {
+    const conn = await pool.getConnection();
+    try {
+        await conn.beginTransaction();
+
+        // 🛑 VALIDACIÓN: Verificar estado actual
+        const [current] = await conn.query(
+            `SELECT estado FROM certificado WHERE id_certificado = ? AND activo = 1`,
+            [id]
+        );
+        
+        if (current.length === 0) throw new Error('Certificado no encontrado');
+        
+        if (current[0].estado === 'PAGADO') {
+            throw new Error('El certificado ya está PAGADO. Su estado no puede ser modificado.');
+        }
+
+
+        if (res.affectedRows === 0) throw new Error('Certificado no encontrado');
+
+        // 2. Si el estado es PAGADO y envían datos de pago, registrarlo
+        if (estado === 'PAGADO' && datosPago) {
+            // Verificar si ya tiene un pago registrado
+            const [existing] = await conn.query(
+                `SELECT id_pago FROM pago_certificado WHERE id_certificado = ?`,
+                [id]
+            );
+
+            if (existing.length === 0) {
+                // Crear el pago (obtenemos el id_cliente directo del certificado)
+                const [resPago] = await conn.query(
+                    `INSERT INTO pago 
+                     (id_cliente, concepto, monto, pagado, fecha_pago, medio_pago, nro_transaccion, registrado_por)
+                     SELECT id_cliente, CONCAT('Pago Certificado ', numero_certificado), ?, 1, ?, ?, ?, ?
+                     FROM certificado WHERE id_certificado = ?`,
+                    [
+                        datosPago.monto || 0,
+                        datosPago.fecha_pago || new Date(),
+                        datosPago.medio_pago || 'EFECTIVO',
+                        datosPago.nro_transaccion || null,
+                        datosPago.registrado_por || 'admin',
+                        id
+                    ]
+                );
+
+                // Vincular pago con certificado
+                await conn.query(
+                    `INSERT INTO pago_certificado (id_pago, id_certificado) VALUES (?, ?)`,
+                    [resPago.insertId, id]
+                );
+            }
+        }
+
+        await conn.commit();
+    } catch (err) {
+        await conn.rollback();
+        throw err;
+    } finally {
+        conn.release();
+    }
 }
+
+
+
+
 
 // ============================================================
 // ELIMINAR (lógico)

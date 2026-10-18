@@ -48,15 +48,22 @@ async function crear(req, res) {
 
 async function actualizarEstado(req, res) {
     try {
-        const { estado } = req.body;
+        const { estado, datosPago } = req.body;
         if (!estado) return res.status(400).json({ mensaje: 'Falta el campo "estado"' });
 
-        await svc.actualizarEstado(Number(req.params.id), estado);
+        // Pasar el usuario logueado si existe
+        if (datosPago) {
+            datosPago.registrado_por = req.usuario?.nombre_usuario || 'admin';
+        }
+
+        await svc.actualizarEstado(Number(req.params.id), estado, datosPago);
         return res.json({ mensaje: 'Estado actualizado a ' + estado });
     } catch (err) {
         return res.status(400).json({ mensaje: err.message });
     }
 }
+
+
 
 async function eliminar(req, res) {
     try {
