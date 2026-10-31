@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path')
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 
@@ -11,7 +13,10 @@ const pool = mysql.createPool({
     connectionLimit:    10,
     queueLimit:         0,
     charset:            'utf8mb4',
-    ssl:                { rejectUnauthorized: false } 
+   // ssl:                { rejectUnauthorized: false } 
+    ssl:                { 
+        ca:fs.readdirSync(path.join(__dirname,'ca.pem'))
+     } 
 });
 
 async function probarConexion() {
