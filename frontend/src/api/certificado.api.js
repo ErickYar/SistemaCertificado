@@ -1,7 +1,7 @@
 import api from './axios';
 
-export const listar = async () => {
-    const { data } = await api.get('/certificados');
+export const listar = async (incluirInactivos = false) => {
+    const { data } = await api.get('/certificados', { params: { incluirInactivos } });
     return data;
 };
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import * as certificadoApi from '../../api/certificado.api';
 import Modal from '../../components/Modal';
+import ModalConfirmacion from '../../components/ModalConfirmacion';
 import CertificadoForm from './CertificadoForm';
 import CertificadoDetalle from './CertificadoDetalle';
 
@@ -12,6 +13,7 @@ export default function Certificados() {
     const [busqueda, setBusqueda]         = useState('');
     const [filtroTipo, setFiltroTipo]     = useState('TODOS');
     const [filtroEstado, setFiltroEstado] = useState('TODOS');
+    const [mostrarEliminados, setMostrarEliminados] = useState(false);
     const [cargando, setCargando]         = useState(true);
     const [error, setError]               = useState('');
     const [aviso, setAviso]               = useState(null);
@@ -22,19 +24,25 @@ export default function Certificados() {
     const [certificadoSeleccionado, setCertificadoSeleccionado] = useState(null);
     const [cargandoDetalle, setCargandoDetalle] = useState(false);
 
-    // Modal Cambiar Estado
-    const [modalEstado, setModalEstado]         = useState(false);
+    // Modal Estado
+    const [modalEstado, setModalEstado] = useState(false);
     const [certificadoEstado, setCertificadoEstado] = useState(null);
-    const [nuevoEstado, setNuevoEstado]         = useState('');
+    const [nuevoEstado, setNuevoEstado] = useState('');
     const [guardandoEstado, setGuardandoEstado] = useState(false);
     const [montoPago, setMontoPago] = useState('');
     const [fechaPago, setFechaPago] = useState('');
     const [medioPago, setMedioPago] = useState('EFECTIVO');
     const [nroTransaccion, setNroTransaccion] = useState('');
 
+
+    // Modal Eliminar
+    const [modalEliminar, setModalEliminar] = useState(false);
+    const [certificadoEliminar, setCertificadoEliminar] = useState(null);
+    const [eliminando, setEliminando] = useState(false);
+
     useEffect(() => {
         cargarCertificados();
-    }, []);
+    }, [mostrarEliminados]);
 
     useEffect(() => {
         if (busqueda.trim() === '') {
@@ -55,7 +63,7 @@ export default function Certificados() {
         setCargando(true);
         setError('');
         try {
-            const data = await certificadoApi.listar();
+            const data = await certificadoApi.listar(mostrarEliminados);
             setCertificados(data);
         } catch (err) {
             setError(err.response?.data?.mensaje || 'Error al cargar certificados');
@@ -76,7 +84,6 @@ export default function Certificados() {
             } else {
                 filtros.numero = texto;
             }
-
             const data = await certificadoApi.buscar(filtros);
             setCertificados(data);
         } catch (err) {
@@ -112,12 +119,12 @@ export default function Certificados() {
         setCertificadoSeleccionado(null);
     };
 
-    // --- HANDLERS DE CAMBIO DE ESTADO ---
+    // --- HANDLERS DE ESTADO ---
     const abrirEstado = (cert) => {
         setCertificadoEstado(cert);
         setNuevoEstado(cert.estado);
         setMontoPago('');
-        setFechaPago(new Date().toISOString().slice(0, 16)); // Fecha actual YYYY-MM-DDTHH:mm
+        setFechaPago(new Date().toISOString().slice(0, 16));
         setMedioPago('EFECTIVO');
         setNroTransaccion('');
         setModalEstado(true);
@@ -128,39 +135,61 @@ export default function Certificados() {
         setCertificadoEstado(null);
     };
 
-   const confirmarCambioEstado = async () => {
-    if (!nuevoEstado || nuevoEstado === certificadoEstado.estado) return;
-
-    // Validación para métodos que requieren número de operación
-    if (nuevoEstado === 'PAGADO' && medioPago !== 'EFECTIVO' && !nroTransaccion) {
-        alert('Por favor, ingrese el número de operación para ' + medioPago);
-        return;
-    }
-    
-    setGuardandoEstado(true);
-    try {
-        const payload = { estado: nuevoEstado };
-
-        // Si es PAGADO, enviamos los datos del pago
-        if (nuevoEstado === 'PAGADO') {
-            payload.datosPago = {
-                monto: parseFloat(montoPago) || 0,
-                fecha_pago: fechaPago.replace('T', ' ') + ':00', // Formatear para MySQL
-                medio_pago: medioPago,
-                nro_transaccion: medioPago === 'EFECTIVO' ? null : nroTransaccion
-            };
+    const confirmarCambioEstado = async () => {
+        if (!nuevoEstado || nuevoEstado === certificadoEstado.estado) return;
+        if (certificadoEstado.estado === 'PAGADO' && nuevoEstado === 'PAGADO') return;
+        if (nuevoEstado === 'PAGADO' && medioPago !== 'EFECTIVO' && !nroTransaccion) {
+            alert('Por favor, ingrese el número de operación para ' + medioPago);
+            return;
         }
+        
+        setGuardandoEstado(true);
+        try {
+            const payload = { estado: nuevoEstado };
+            if (nuevoEstado === 'PAGADO') {
+                payload.datosPago = {
+                    monto: parseFloat(montoPago) || 0,
+                    fecha_pago: fechaPago.replace('T', ' ') + ':00',
+                    medio_pago: medioPago,
+                    nro_transaccion: medioPago === 'EFECTIVO' ? null : nroTransaccion
+                };
+            }
+            await certificadoApi.actualizarEstado(certificadoEstado.id_certificado, payload);
+            cerrarEstado();
+            cargarCertificados();
+            setAviso({ tipo: 'success', mensaje: `Estado actualizado a ${nuevoEstado}` });
+        } catch (err) {
+            alert(err.response?.data?.mensaje || 'Error al actualizar estado');
+        } finally {
+            setGuardandoEstado(false);
+        }
+    };
 
-        await certificadoApi.actualizarEstado(certificadoEstado.id_certificado, payload);
-        cerrarEstado();
-        cargarCertificados();
-        setAviso({ tipo: 'success', mensaje: `Estado actualizado a ${nuevoEstado}` });
-    } catch (err) {
-        alert(err.response?.data?.mensaje || 'Error al actualizar estado');
-    } finally {
-        setGuardandoEstado(false);
-    }
-};
+    // --- HANDLERS DE ELIMINAR ---
+    const abrirEliminar = (cert) => {
+        setCertificadoEliminar(cert);
+        setModalEliminar(true);
+    };
+
+    const cerrarEliminar = () => {
+        setModalEliminar(false);
+        setCertificadoEliminar(null);
+    };
+
+    const confirmarEliminar = async () => {
+        if (!certificadoEliminar) return;
+        setEliminando(true);
+        try {
+            await certificadoApi.eliminar(certificadoEliminar.id_certificado);
+            cerrarEliminar();
+            cargarCertificados();
+            setAviso({ tipo: 'success', mensaje: 'Certificado eliminado correctamente' });
+        } catch (err) {
+            alert(err.response?.data?.mensaje || 'Error al eliminar certificado');
+        } finally {
+            setEliminando(false);
+        }
+    };
 
     // Filtros locales
     const certificadosFiltrados = certificados.filter((c) => {
@@ -220,7 +249,7 @@ export default function Certificados() {
                     type="text"
                     value={busqueda}
                     onChange={(e) => setBusqueda(e.target.value)}
-                    placeholder="🔍 Buscar por N° certificado (26 000457), código control (SA-50-000686) o placa (ARQ-783)..."
+                    placeholder="🔍 Buscar por N° certificado, código control o placa..."
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 {busqueda && (
@@ -230,7 +259,11 @@ export default function Certificados() {
                 )}
             </div>
 
-            <div className="bg-white rounded-lg shadow p-4 mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+
+
+
+
+         <div className="bg-white rounded-lg shadow p-4 mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                 <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de certificado</label>
                     <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white">
@@ -243,7 +276,26 @@ export default function Certificados() {
                         {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
                     </select>
                 </div>
+                
+                {/* 👇 AQUÍ ESTÁ LA NUEVA CASILLA 👇 */}
+                <div className="flex items-center pb-2">
+                    <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
+                        <input 
+                            type="checkbox" 
+                            checked={mostrarEliminados} 
+                            onChange={(e) => setMostrarEliminados(e.target.checked)}
+                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                        Ver certificados eliminados (Admin)
+                    </label>
+                </div>
             </div>
+
+
+
+
+
+
 
             {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4">{error}</div>}
 
@@ -268,27 +320,53 @@ export default function Certificados() {
                                 <th className="text-right px-4 py-3 text-xs font-semibold text-gray-600 uppercase">Acciones</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {certificadosFiltrados.map((c) => (
-                                <tr key={c.id_certificado} className="hover:bg-gray-50">
-                                    <td className="px-4 py-3 whitespace-nowrap">
-                                        <div className="font-mono font-bold text-gray-800">{c.numero_certificado}</div>
-                                        <div className="text-xs text-gray-500 font-mono">{c.codigo_control}</div>
-                                    </td>
-                                    <td className="px-4 py-3 whitespace-nowrap">{getBadgeTipo(c.tipo_certificado)}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap">{getBadgeEstado(c.estado)}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap">
-                                        <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">{c.placa || '—'}</span>
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-gray-700 max-w-xs truncate">{getNombreCliente(c)}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-right text-sm space-x-2">
-                                        <button onClick={() => abrirDetalle(c.id_certificado)} className="text-blue-600 hover:text-blue-800 font-medium">Ver</button>
-                                        <button onClick={() => abrirEstado(c)} className="text-green-600 hover:text-green-800 font-medium">Estado</button>
-                                        <button onClick={() => alert('Próximamente: Eliminar')} className="text-red-600 hover:text-red-800 font-medium">Eliminar</button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
+
+
+
+                     <tbody className="divide-y divide-gray-100">
+    {certificadosFiltrados.map((c) => (
+        <tr key={c.id_certificado} className={`hover:bg-gray-50 ${c.activo === 0 ? 'bg-red-50 opacity-75' : ''}`}>
+            <td className="px-4 py-3 whitespace-nowrap">
+                <div className={`font-mono font-bold ${c.activo === 0 ? 'line-through text-red-500' : 'text-gray-800'}`}>
+                    {c.numero_certificado}
+                </div>
+                <div className="text-xs text-gray-500 font-mono">{c.codigo_control}</div>
+            </td>
+            
+            <td className="px-4 py-3 whitespace-nowrap">{getBadgeTipo(c.tipo_certificado)}</td>
+            
+            <td className="px-4 py-3 whitespace-nowrap">
+                {c.activo === 0 ? (
+                    <span className="text-xs px-2 py-1 rounded-full font-bold bg-red-200 text-red-800">
+                        ELIMINADO
+                    </span>
+                ) : (
+                    getBadgeEstado(c.estado)
+                )}
+            </td>
+            
+            <td className="px-4 py-3 whitespace-nowrap">
+                <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">{c.placa || '—'}</span>
+            </td>
+            
+            <td className="px-4 py-3 text-sm text-gray-700 max-w-xs truncate">{getNombreCliente(c)}</td>
+            
+            <td className="px-4 py-3 whitespace-nowrap text-right text-sm space-x-2">
+                <button onClick={() => abrirDetalle(c.id_certificado)} className="text-blue-600 hover:text-blue-800 font-medium">Ver</button>
+                
+                {/* Solo mostramos Estado y Eliminar si está ACTIVO */}
+                {c.activo === 1 && (
+                    <>
+                        <button onClick={() => abrirEstado(c)} className="text-green-600 hover:text-green-800 font-medium">Estado</button>
+                        <button onClick={() => abrirEliminar(c)} className="text-red-600 hover:text-red-800 font-medium">Eliminar</button>
+                    </>
+                )}
+            </td>
+        </tr>
+    ))}
+</tbody>
+
+
                     </table>
                 </div>
             )}
@@ -313,110 +391,104 @@ export default function Certificados() {
                 )}
             </Modal>
 
-            {/* MODAL CAMBIAR ESTADO */}
-      <Modal abierto={modalEstado} onCerrar={cerrarEstado} titulo="Estado del Certificado" size="md">
-    {certificadoEstado && (
-        <div className="space-y-4">
-            <div className="bg-gray-50 p-3 rounded-lg text-sm text-center">
-                Certificado: <span className="font-bold font-mono">{certificadoEstado.numero_certificado}</span>
-            </div>
+            {/* MODAL ESTADO */}
+            <Modal abierto={modalEstado} onCerrar={cerrarEstado} titulo="Estado del Certificado" size="md">
+                {certificadoEstado && (
+                    <div className="space-y-4">
+                        <div className="bg-gray-50 p-3 rounded-lg text-sm text-center">
+                            Certificado: <span className="font-bold font-mono">{certificadoEstado.numero_certificado}</span>
+                        </div>
 
-            {/* 🚨 ALERTA DE YA PAGADO 🚨 */}
-            {certificadoEstado.estado === 'PAGADO' && (
-                <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded-r-lg mb-4">
-                    <div className="flex items-center">
-                        <div className="flex-shrink-0 text-2xl">✅</div>
-                        <div className="ml-3">
-                            <p className="text-sm font-bold text-green-800">
-                                Este certificado ya ha sido PAGADO.
-                            </p>
-                            <p className="text-xs text-green-700 mt-1">
-                                El estado está bloqueado y no puede ser modificado.
-                            </p>
+                        {certificadoEstado.estado === 'PAGADO' && (
+                            <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded-r-lg mb-4">
+                                <div className="flex items-center">
+                                    <div className="flex-shrink-0 text-2xl">✅</div>
+                                    <div className="ml-3">
+                                        <p className="text-sm font-bold text-green-800">Este certificado ya ha sido PAGADO.</p>
+                                        <p className="text-xs text-green-700 mt-1">El estado está bloqueado y no puede ser modificado.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Estado Actual</label>
+                            <select 
+                                value={nuevoEstado} 
+                                onChange={(e) => setNuevoEstado(e.target.value)}
+                                disabled={certificadoEstado.estado === 'PAGADO'}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                            >
+                                <option value="BORRADOR">BORRADOR</option>
+                                <option value="EMITIDO">EMITIDO</option>
+                                <option value="PAGADO">PAGADO</option>
+                                <option value="ENTREGADO">ENTREGADO</option>
+                                <option value="ANULADO">ANULADO</option>
+                            </select>
+                        </div>
+
+                        {nuevoEstado === 'PAGADO' && certificadoEstado.estado !== 'PAGADO' && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                                <h4 className="text-sm font-bold text-blue-800 mb-2">Datos del Pago</h4>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">Monto (S/)</label>
+                                        <input type="number" step="0.01" value={montoPago} onChange={(e) => setMontoPago(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="0.00" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">Fecha y Hora</label>
+                                        <input type="datetime-local" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">Medio de Pago</label>
+                                    <select value={medioPago} onChange={(e) => setMedioPago(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                        <option value="EFECTIVO">EFECTIVO</option>
+                                        <option value="YAPE">YAPE</option>
+                                        <option value="PLIN">PLIN</option>
+                                        <option value="TRANSFERENCIA">TRANSFERENCIA</option>
+                                        <option value="DEPOSITO">DEPOSITO</option>
+                                        <option value="TARJETA">TARJETA</option>
+                                    </select>
+                                </div>
+                                {medioPago !== 'EFECTIVO' && (
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">N° de Operación *</label>
+                                        <input type="text" value={nroTransaccion} onChange={(e) => setNroTransaccion(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ej: 12345678" />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-6">
+                            <button onClick={cerrarEstado} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                                {certificadoEstado.estado === 'PAGADO' ? 'Cerrar' : 'Cancelar'}
+                            </button>
+                            {certificadoEstado.estado !== 'PAGADO' && (
+                                <button onClick={confirmarCambioEstado} disabled={guardandoEstado || nuevoEstado === certificadoEstado.estado} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {guardandoEstado ? 'Guardando...' : 'Actualizar Estado'}
+                                </button>
+                            )}
                         </div>
                     </div>
-                </div>
-            )}
-
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Estado Actual</label>
-                <select 
-                    value={nuevoEstado} 
-                    onChange={(e) => setNuevoEstado(e.target.value)}
-                    disabled={certificadoEstado.estado === 'PAGADO'} // 🔒 BLOQUEADO SI ESTÁ PAGADO
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                >
-                    <option value="BORRADOR">BORRADOR</option>
-                    <option value="EMITIDO">EMITIDO</option>
-                    <option value="PAGADO">PAGADO</option>
-                    <option value="ENTREGADO">ENTREGADO</option>
-                    <option value="ANULADO">ANULADO</option>
-                </select>
-            </div>
-
-            {/* CAMPOS EXTRA SI SE SELECCIONA PAGADO Y AÚN NO LO ESTÁ */}
-            {nuevoEstado === 'PAGADO' && certificadoEstado.estado !== 'PAGADO' && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
-                    <h4 className="text-sm font-bold text-blue-800 mb-2">Datos del Pago</h4>
-                    
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Monto (S/)</label>
-                            <input type="number" step="0.01" value={montoPago} onChange={(e) => setMontoPago(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="0.00" />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Fecha y Hora</label>
-                            <input type="datetime-local" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Medio de Pago</label>
-                        <select value={medioPago} onChange={(e) => setMedioPago(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                            <option value="EFECTIVO">EFECTIVO</option>
-                            <option value="YAPE">YAPE</option>
-                            <option value="PLIN">PLIN</option>
-                            <option value="TRANSFERENCIA">TRANSFERENCIA</option>
-                            <option value="DEPOSITO">DEPOSITO</option>
-                            <option value="TARJETA">TARJETA</option>
-                        </select>
-                    </div>
-
-                    {medioPago !== 'EFECTIVO' && (
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">N° de Operación *</label>
-                            <input type="text" value={nroTransaccion} onChange={(e) => setNroTransaccion(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ej: 12345678" />
-                        </div>
-                    )}
-                </div>
-            )}
-
-            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-6">
-                <button 
-                    onClick={cerrarEstado} 
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                    {certificadoEstado.estado === 'PAGADO' ? 'Cerrar' : 'Cancelar'}
-                </button>
-                
-                {/* 🔒 OCULTAMOS O DESHABILITAMOS EL BOTÓN SI YA ESTÁ PAGADO */}
-                {certificadoEstado.estado !== 'PAGADO' && (
-                    <button 
-                        onClick={confirmarCambioEstado} 
-                        disabled={guardandoEstado || nuevoEstado === certificadoEstado.estado} 
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {guardandoEstado ? 'Guardando...' : 'Actualizar Estado'}
-                    </button>
                 )}
-            </div>
-        </div>
-    )}
-</Modal>
+            </Modal>
+
+            {/* MODAL ELIMINAR */}
+            <ModalConfirmacion
+                abierto={modalEliminar}
+                onCerrar={cerrarEliminar}
+                onConfirmar={confirmarEliminar}
+                titulo="Eliminar Certificado"
+                mensaje={
+                    certificadoEliminar
+                        ? `¿Estás seguro de eliminar el certificado "${certificadoEliminar.numero_certificado}"? Esta acción desactivará el registro y no se mostrará más en la lista.`
+                        : ''
+                }
+                textoConfirmar="Sí, eliminar"
+                variante="danger"
+                cargando={eliminando}
+            />
         </div>
     );
 }
